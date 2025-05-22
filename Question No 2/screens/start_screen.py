@@ -3,6 +3,9 @@ import sys
 
 def show_start_screen(screen, width, height):
 
+    background = pygame.image.load("assets/menu_background.png")
+    background = pygame.transform.scale(background, (width, height))
+ 
     pygame.mixer.music.load("assets/menu_song.ogg")  
     pygame.mixer.music.play(-1) 
 
@@ -17,7 +20,7 @@ def show_start_screen(screen, width, height):
 
     waiting = True
     while waiting:
-        screen.fill((0, 0, 0)) 
+        screen.blit(background, (0, 0))
 
         screen.blit(title_text, title_rect)
         screen.blit(info_text, info_rect)
