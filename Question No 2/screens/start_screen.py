@@ -2,7 +2,7 @@ import pygame
 import sys
 
 def show_start_screen(screen, width, height):
-
+    
     background = pygame.image.load("assets/menu_background.png")
     background = pygame.transform.scale(background, (width, height))
  
