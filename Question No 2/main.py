@@ -4,6 +4,7 @@ from screens.start_screen import show_start_screen
 from screens.instruction_screen import show_instructions_screen
 from screens.selection_screen import show_tank_selection_screen  # Import tank selection screen
 
+
 pygame.init()
 pygame.mixer.init()
 
@@ -21,3 +22,4 @@ show_instructions_screen(screen, WIDTH, HEIGHT)
 show_tank_selection_screen(screen, WIDTH, HEIGHT)
 
 print("Continue to next screen...")
+
