@@ -8,12 +8,29 @@ class ImageEditor:
     def __init__(self):
         # Initialize the main window
         self.root = tk.Tk()
-        self.root.title("Image Editor")
-        self.root.geometry("800x600")
+        self.root.title("Image Editor - Step 2: Cropping Feature")
+        self.root.geometry("1000x700")
         
         # Variables to store image data
         self.original_image = None
+        self.cropped_image = None
         self.display_image = None
+        self.cropped_display_image = None
+        
+        # Variables for cropping functionality
+        self.is_cropping = False
+        self.crop_start_x = 0
+        self.crop_start_y = 0
+        self.crop_end_x = 0
+        self.crop_end_y = 0
+        self.crop_rectangle = None
+        
+        # Variables to store display properties
+        self.display_x = 0
+        self.display_y = 0
+        self.display_width = 0
+        self.display_height = 0
+        self.display_scale = 1.0
         
         # Create the user interface
         self.create_widgets()
@@ -29,6 +46,7 @@ class ImageEditor:
         self.root.columnconfigure(0, weight=1)
         self.root.rowconfigure(0, weight=1)
         main_frame.columnconfigure(1, weight=1)
+        main_frame.columnconfigure(2, weight=1)
         main_frame.rowconfigure(1, weight=1)
         
         # Control panel on the left
@@ -39,17 +57,50 @@ class ImageEditor:
         self.load_button = ttk.Button(control_frame, text="Load Image", command=self.load_image)
         self.load_button.pack(pady=5, fill=tk.X)
         
+        # Crop button
+        self.crop_button = ttk.Button(control_frame, text="Enable Cropping", 
+                                     command=self.toggle_cropping, state="disabled")
+        self.crop_button.pack(pady=5, fill=tk.X)
+        
+        # Apply crop button
+        self.apply_crop_button = ttk.Button(control_frame, text="Apply Crop", 
+                                           command=self.apply_crop, state="disabled")
+        self.apply_crop_button.pack(pady=5, fill=tk.X)
+        
+        # Reset button
+        self.reset_button = ttk.Button(control_frame, text="Reset to Original", 
+                                      command=self.reset_image, state="disabled")
+        self.reset_button.pack(pady=5, fill=tk.X)
+        
         # Status label to show current operation
         self.status_label = ttk.Label(control_frame, text="No image loaded")
-        self.status_label.pack(pady=5)
+        self.status_label.pack(pady=10)
         
-        # Image display area
+        # Instructions label
+        self.instructions_label = ttk.Label(control_frame, 
+                                           text="Instructions:\n1. Load an image\n2. Enable cropping\n3. Click and drag to select area\n4. Apply crop to see result",
+                                           justify=tk.LEFT, wraplength=180)
+        self.instructions_label.pack(pady=10)
+        
+        # Original image display area
         self.image_frame = ttk.LabelFrame(main_frame, text="Original Image", padding="5")
-        self.image_frame.grid(row=0, column=1, sticky=(tk.W, tk.E, tk.N, tk.S))
+        self.image_frame.grid(row=0, column=1, sticky=(tk.W, tk.E, tk.N, tk.S), padx=(0, 5))
         
-        # Canvas to display the image
-        self.image_canvas = tk.Canvas(self.image_frame, bg="white", width=500, height=400)
+        # Canvas to display the original image
+        self.image_canvas = tk.Canvas(self.image_frame, bg="white", width=400, height=300)
         self.image_canvas.pack(expand=True, fill=tk.BOTH)
+        
+        # Cropped image display area
+        self.cropped_frame = ttk.LabelFrame(main_frame, text="Cropped Image", padding="5")
+        self.cropped_frame.grid(row=0, column=2, sticky=(tk.W, tk.E, tk.N, tk.S), padx=(5, 0))
+        
+        # Canvas to display the cropped image
+        self.cropped_canvas = tk.Canvas(self.cropped_frame, bg="lightgray", width=400, height=300)
+        self.cropped_canvas.pack(expand=True, fill=tk.BOTH)
+        
+        # Add text to cropped canvas initially
+        self.cropped_canvas.create_text(200, 150, text="Cropped image will appear here", 
+                                       fill="gray", font=("Arial", 12))
         
     def load_image(self):
         """Load an image from the local device"""
@@ -80,11 +131,23 @@ class ImageEditor:
             # Convert BGR to RGB for proper display
             self.original_image = cv2.cvtColor(self.original_image, cv2.COLOR_BGR2RGB)
             
+            # Reset cropped image
+            self.cropped_image = None
+            
             # Display the loaded image
             self.display_loaded_image()
             
+            # Enable controls
+            self.crop_button.config(state="normal")
+            self.reset_button.config(state="normal")
+            
             # Update status
             self.status_label.config(text=f"Image loaded: {file_path.split('/')[-1]}")
+            
+            # Clear cropped canvas
+            self.cropped_canvas.delete("all")
+            self.cropped_canvas.create_text(200, 150, text="Cropped image will appear here", 
+                                           fill="gray", font=("Arial", 12))
             
         except Exception as e:
             messagebox.showerror("Error", f"Failed to load image: {str(e)}")
@@ -101,9 +164,9 @@ class ImageEditor:
         
         # If canvas hasn't been drawn yet, use default size
         if canvas_width <= 1:
-            canvas_width = 500
+            canvas_width = 400
         if canvas_height <= 1:
-            canvas_height = 400
+            canvas_height = 300
         
         # Get image dimensions
         img_height, img_width = self.original_image.shape[:2]
@@ -139,6 +202,208 @@ class ImageEditor:
         self.display_width = new_width
         self.display_height = new_height
         self.display_scale = scale
+    
+    def toggle_cropping(self):
+        """Enable or disable cropping mode"""
+        
+        if not self.is_cropping:
+            # Enable cropping mode
+            self.is_cropping = True
+            self.crop_button.config(text="Disable Cropping")
+            self.status_label.config(text="Cropping enabled - Click and drag to select area")
+            
+            # Bind mouse events for cropping
+            self.image_canvas.bind("<Button-1>", self.start_crop)
+            self.image_canvas.bind("<B1-Motion>", self.update_crop)
+            self.image_canvas.bind("<ButtonRelease-1>", self.end_crop)
+            
+        else:
+            # Disable cropping mode
+            self.is_cropping = False
+            self.crop_button.config(text="Enable Cropping")
+            self.status_label.config(text="Cropping disabled")
+            
+            # Unbind mouse events
+            self.image_canvas.unbind("<Button-1>")
+            self.image_canvas.unbind("<B1-Motion>")
+            self.image_canvas.unbind("<ButtonRelease-1>")
+            
+            # Remove crop rectangle if exists
+            if self.crop_rectangle:
+                self.image_canvas.delete(self.crop_rectangle)
+                self.crop_rectangle = None
+    
+    def start_crop(self, event):
+        """Start cropping - mouse button pressed"""
+        
+        # Store starting position
+        self.crop_start_x = event.x
+        self.crop_start_y = event.y
+        
+        # Remove previous crop rectangle if exists
+        if self.crop_rectangle:
+            self.image_canvas.delete(self.crop_rectangle)
+    
+    def update_crop(self, event):
+        """Update crop rectangle while dragging"""
+        
+        # Store current position
+        self.crop_end_x = event.x
+        self.crop_end_y = event.y
+        
+        # Remove previous rectangle
+        if self.crop_rectangle:
+            self.image_canvas.delete(self.crop_rectangle)
+        
+        # Draw new rectangle
+        self.crop_rectangle = self.image_canvas.create_rectangle(
+            self.crop_start_x, self.crop_start_y, 
+            self.crop_end_x, self.crop_end_y,
+            outline="red", width=2, dash=(5, 5)
+        )
+    
+    def end_crop(self, event):
+        """End cropping - mouse button released"""
+        
+        # Update final position
+        self.crop_end_x = event.x
+        self.crop_end_y = event.y
+        
+        # Check if we have a valid selection
+        if abs(self.crop_end_x - self.crop_start_x) > 10 and abs(self.crop_end_y - self.crop_start_y) > 10:
+            # Enable apply crop button
+            self.apply_crop_button.config(state="normal")
+            self.status_label.config(text="Selection made - Click 'Apply Crop' to crop the image")
+        else:
+            # Selection too small
+            self.status_label.config(text="Selection too small - Try again")
+            if self.crop_rectangle:
+                self.image_canvas.delete(self.crop_rectangle)
+                self.crop_rectangle = None
+    
+    def apply_crop(self):
+        """Apply the crop to the original image"""
+        
+        if self.original_image is None or self.crop_rectangle is None:
+            return
+        
+        # Calculate crop coordinates relative to the original image
+        # Convert canvas coordinates to image coordinates
+        
+        # Get the bounds of the crop rectangle
+        x1 = min(self.crop_start_x, self.crop_end_x) - self.display_x
+        y1 = min(self.crop_start_y, self.crop_end_y) - self.display_y
+        x2 = max(self.crop_start_x, self.crop_end_x) - self.display_x
+        y2 = max(self.crop_start_y, self.crop_end_y) - self.display_y
+        
+        # Make sure coordinates are within image bounds
+        x1 = max(0, x1)
+        y1 = max(0, y1)
+        x2 = min(self.display_width, x2)
+        y2 = min(self.display_height, y2)
+        
+        # Convert to original image coordinates
+        orig_x1 = int(x1 / self.display_scale)
+        orig_y1 = int(y1 / self.display_scale)
+        orig_x2 = int(x2 / self.display_scale)
+        orig_y2 = int(y2 / self.display_scale)
+        
+        # Make sure coordinates are valid
+        img_height, img_width = self.original_image.shape[:2]
+        orig_x1 = max(0, min(orig_x1, img_width))
+        orig_y1 = max(0, min(orig_y1, img_height))
+        orig_x2 = max(0, min(orig_x2, img_width))
+        orig_y2 = max(0, min(orig_y2, img_height))
+        
+        # Crop the image
+        self.cropped_image = self.original_image[orig_y1:orig_y2, orig_x1:orig_x2]
+        
+        # Display the cropped image
+        self.display_cropped_image()
+        
+        # Update status
+        self.status_label.config(text="Image cropped successfully")
+        
+        # Disable apply crop button
+        self.apply_crop_button.config(state="disabled")
+        
+        # Remove crop rectangle
+        if self.crop_rectangle:
+            self.image_canvas.delete(self.crop_rectangle)
+            self.crop_rectangle = None
+    
+    def display_cropped_image(self):
+        """Display the cropped image on the cropped canvas"""
+        
+        if self.cropped_image is None:
+            return
+        
+        # Get canvas dimensions
+        canvas_width = self.cropped_canvas.winfo_width()
+        canvas_height = self.cropped_canvas.winfo_height()
+        
+        # If canvas hasn't been drawn yet, use default size
+        if canvas_width <= 1:
+            canvas_width = 400
+        if canvas_height <= 1:
+            canvas_height = 300
+        
+        # Get image dimensions
+        img_height, img_width = self.cropped_image.shape[:2]
+        
+        # Calculate scaling factor to fit image in canvas while maintaining aspect ratio
+        scale_x = (canvas_width - 20) / img_width
+        scale_y = (canvas_height - 20) / img_height
+        scale = min(scale_x, scale_y, 1.0)  # Don't scale up, only down
+        
+        # Calculate new dimensions
+        new_width = int(img_width * scale)
+        new_height = int(img_height * scale)
+        
+        # Resize image for display
+        resized_image = cv2.resize(self.cropped_image, (new_width, new_height))
+        
+        # Convert to PIL Image and then to PhotoImage for Tkinter
+        pil_image = Image.fromarray(resized_image)
+        self.cropped_display_image = ImageTk.PhotoImage(pil_image)
+        
+        # Clear canvas and display image
+        self.cropped_canvas.delete("all")
+        
+        # Center the image on canvas
+        x = (canvas_width - new_width) // 2
+        y = (canvas_height - new_height) // 2
+        
+        self.cropped_canvas.create_image(x, y, anchor=tk.NW, image=self.cropped_display_image)
+    
+    def reset_image(self):
+        """Reset to original image"""
+        
+        # Clear cropped image
+        self.cropped_image = None
+        
+        # Redisplay original image
+        self.display_loaded_image()
+        
+        # Clear cropped canvas
+        self.cropped_canvas.delete("all")
+        self.cropped_canvas.create_text(200, 150, text="Cropped image will appear here", 
+                                       fill="gray", font=("Arial", 12))
+        
+        # Reset cropping mode
+        if self.is_cropping:
+            self.toggle_cropping()
+        
+        # Reset buttons
+        self.apply_crop_button.config(state="disabled")
+        
+        # Remove crop rectangle if exists
+        if self.crop_rectangle:
+            self.image_canvas.delete(self.crop_rectangle)
+            self.crop_rectangle = None
+        
+        # Update status
+        self.status_label.config(text="Reset to original image")
     
     def run(self):
         """Start the application"""
